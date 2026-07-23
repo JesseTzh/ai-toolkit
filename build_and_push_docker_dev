@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 
 VERSION=dev
-GIT_COMMIT=dev
 
-echo "Docker builds from the repo, not this dir. Make sure changes are pushed to the repo."
+echo "Docker builds from the current working tree."
 echo "Building version: $VERSION"
 # wait 2 seconds
 sleep 2
 
-# Build the image with cache busting
-docker build --build-arg CACHEBUST=$(date +%s) -t aitoolkit:$VERSION -f docker/Dockerfile .
+# Build the image. Docker invalidates the source layer when working-tree files change.
+docker build -t aitoolkit:$VERSION -f docker/Dockerfile .
 
 # Tag with version and latest
 docker tag aitoolkit:$VERSION ostris/aitoolkit:$VERSION
