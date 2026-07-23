@@ -21,12 +21,16 @@ ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 9.0 10.0 12.0"
 
 # Install dependencies
 RUN sed -i -E \
-        "s|https?://(archive|security).ubuntu.com/ubuntu/?|${UBUNTU_MIRROR}/|g; \
-         s|https?://ports.ubuntu.com/ubuntu-ports/?|${UBUNTU_PORTS_MIRROR}/|g" \
-        /etc/apt/sources.list.d/ubuntu.sources && \
-    find /etc/apt/sources.list.d -type f ! -name ubuntu.sources \
-        -exec sed -i -E '/^[[:space:]]*deb([[:space:]]|$)/s/^/# disabled for offline-friendly build: /' {} + && \
-    apt-get update && apt-get install --no-install-recommends -y \
+        "s#https?://(archive|security).ubuntu.com/ubuntu/?#${UBUNTU_MIRROR}/#g; \
+         s#https?://ports.ubuntu.com/ubuntu-ports/?#${UBUNTU_PORTS_MIRROR}/#g" \
+        /etc/apt/sources.list.d/ubuntu.sources
+
+RUN find /etc/apt/sources.list.d -type f ! -name ubuntu.sources \
+        -exec sed -i -E '/^[[:space:]]*deb([[:space:]]|$)/s/^/# disabled for offline-friendly build: /' {} +
+
+RUN apt-get update
+
+RUN apt-get install --no-install-recommends -y \
     git \
     curl \
     build-essential \
@@ -47,9 +51,9 @@ RUN sed -i -E \
     openssh-server \
     openssl \
     unzip \
-    xz-utils \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    xz-utils
+
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js from npmmirror. The architecture mapping matches Node.js's
 # binary archive naming for the platforms supported by the CUDA base image.
@@ -72,7 +76,13 @@ WORKDIR /app
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Install PyTorch before application dependencies to maximize layer reuse.
-RUN pip install --no-cache-dir torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 \
+RUN pip install --no-cache-dir torch==2.9.1 \
+    --index-url "${PYTORCH_INDEX_URL}" --break-system-packages
+
+RUN pip install --no-cache-dir torchvision==0.24.1 \
+    --index-url "${PYTORCH_INDEX_URL}" --break-system-packages
+
+RUN pip install --no-cache-dir torchaudio==2.9.1 \
     --index-url "${PYTORCH_INDEX_URL}" --break-system-packages
 
 WORKDIR /app/ai-toolkit
