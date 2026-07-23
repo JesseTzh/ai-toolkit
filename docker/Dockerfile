@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 ARG CUDA_IMAGE=nvidia/cuda:12.8.1-devel-ubuntu24.04
 FROM ${CUDA_IMAGE}
 
@@ -7,10 +9,10 @@ ARG UBUNTU_MIRROR=https://mirrors.aliyun.com/ubuntu
 ARG UBUNTU_PORTS_MIRROR=https://mirrors.aliyun.com/ubuntu-ports
 ARG PYPI_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
+ARG PYTORCH_MIRROR_URL=https://mirrors.aliyun.com/pytorch-wheels/cu128
 ARG NODE_MIRROR=https://npmmirror.com/mirrors/node
 ARG NODE_VERSION=23.11.1
 ARG NPM_REGISTRY=https://registry.npmmirror.com
-ARG GITHUB_MIRROR_PREFIX=https://ghfast.top/https://github.com/
 
 # Set noninteractive to avoid timezone prompts and use mainland China mirrors.
 ENV DEBIAN_FRONTEND=noninteractive
@@ -31,6 +33,7 @@ RUN find /etc/apt/sources.list.d -type f ! -name ubuntu.sources \
 RUN apt-get update
 
 RUN apt-get install --no-install-recommends -y \
+    aria2 \
     git \
     curl \
     build-essential \
@@ -75,15 +78,39 @@ WORKDIR /app
 # Set aliases for python and pip
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Install PyTorch before application dependencies to maximize layer reuse.
-RUN pip install --no-cache-dir torch==2.9.1 \
-    --index-url "${PYTORCH_INDEX_URL}" --break-system-packages
+# Download the 900 MB CUDA wheel with parallel connections and a persistent
+# BuildKit cache. The Aliyun mirror is tried first; the official CDN is the
+# fallback. A failed build can resume instead of restarting from zero.
+RUN --mount=type=cache,id=aitk-pytorch,target=/var/cache/aitk-pytorch \
+    (aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false \
+        --max-connection-per-server=8 --split=8 \
+        --min-split-size=10M --file-allocation=none \
+        --dir=/var/cache/aitk-pytorch \
+        --out='torch-2.9.1+cu128-cp312-cp312-manylinux_2_28_x86_64.whl' \
+        "${PYTORCH_MIRROR_URL}/torch-2.9.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl" && \
+     test "$(stat -c %s '/var/cache/aitk-pytorch/torch-2.9.1+cu128-cp312-cp312-manylinux_2_28_x86_64.whl')" -gt 800000000) || \
+    aria2c --continue=true --allow-overwrite=true --auto-file-renaming=false \
+        --max-connection-per-server=8 --split=8 \
+        --min-split-size=10M --file-allocation=none \
+        --dir=/var/cache/aitk-pytorch \
+        --out='torch-2.9.1+cu128-cp312-cp312-manylinux_2_28_x86_64.whl' \
+        "${PYTORCH_INDEX_URL}/torch-2.9.1%2Bcu128-cp312-cp312-manylinux_2_28_x86_64.whl"
 
-RUN pip install --no-cache-dir torchvision==0.24.1 \
-    --index-url "${PYTORCH_INDEX_URL}" --break-system-packages
+RUN --mount=type=cache,id=aitk-pytorch,target=/var/cache/aitk-pytorch \
+    --mount=type=cache,id=aitk-pip,target=/root/.cache/pip \
+    pip install \
+        '/var/cache/aitk-pytorch/torch-2.9.1+cu128-cp312-cp312-manylinux_2_28_x86_64.whl' \
+        --break-system-packages
 
-RUN pip install --no-cache-dir torchaudio==2.9.1 \
-    --index-url "${PYTORCH_INDEX_URL}" --break-system-packages
+RUN --mount=type=cache,id=aitk-pip,target=/root/.cache/pip \
+    pip install 'torchvision==0.24.1+cu128' \
+    --index-url "${PYPI_INDEX_URL}" \
+    --extra-index-url "${PYTORCH_INDEX_URL}" --break-system-packages
+
+RUN --mount=type=cache,id=aitk-pip,target=/root/.cache/pip \
+    pip install 'torchaudio==2.9.1+cu128' \
+    --index-url "${PYPI_INDEX_URL}" \
+    --extra-index-url "${PYTORCH_INDEX_URL}" --break-system-packages
 
 WORKDIR /app/ai-toolkit
 
@@ -95,10 +122,11 @@ WORKDIR /app/ai-toolkit
 
 # Install Python dependencies (only re-runs when the requirements files change)
 COPY requirements.txt requirements_base.txt /app/ai-toolkit/
-RUN git config --global \
-        url."${GITHUB_MIRROR_PREFIX}".insteadOf "https://github.com/" && \
-    pip install --no-cache-dir --break-system-packages -r requirements.txt && \
-    pip install setuptools==69.5.1 --no-cache-dir --break-system-packages
+RUN --mount=type=cache,id=aitk-pip,target=/root/.cache/pip \
+    pip install --break-system-packages -r requirements.txt
+
+RUN --mount=type=cache,id=aitk-pip,target=/root/.cache/pip \
+    pip install setuptools==69.5.1 --break-system-packages
 
 # Install Node dependencies (only re-runs when package.json / package-lock.json change)
 COPY ui/package.json ui/package-lock.json /app/ai-toolkit/ui/
