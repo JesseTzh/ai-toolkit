@@ -634,8 +634,11 @@ class StableDiffusion:
             self.print_and_status_update("Loading transformer")
             subfolder = 'transformer'
             transformer_path = model_path
-            local_files_only = False
-            # check if HF_DATASETS_OFFLINE or TRANSFORMERS_OFFLINE is set
+            local_files_only = os.environ.get(
+                "AI_TOOLKIT_HF_LOCAL_FILES_ONLY", "false"
+            ).strip().lower() in {"1", "true", "yes", "on"}
+            if local_files_only:
+                self.print_and_status_update("Hugging Face local-files-only mode enabled")
             if os.path.exists(transformer_path):
                 subfolder = None
                 transformer_path = os.path.join(transformer_path, 'transformer')
@@ -649,6 +652,7 @@ class StableDiffusion:
                 transformer_path,
                 subfolder=subfolder,
                 torch_dtype=dtype,
+                local_files_only=local_files_only,
                 # low_cpu_mem_usage=False,
                 # device_map=None
             )
@@ -785,18 +789,40 @@ class StableDiffusion:
 
             flush()
 
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(base_model_path, subfolder="scheduler")
+            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+                base_model_path,
+                subfolder="scheduler",
+                local_files_only=local_files_only,
+            )
             self.print_and_status_update("Loading VAE")
             if self.model_config.vae_path is not None:
-                vae = load_vae(self.model_config.vae_path, dtype)
+                vae = load_vae(
+                    self.model_config.vae_path,
+                    dtype,
+                    local_files_only=local_files_only,
+                )
             else:
-                vae = AutoencoderKL.from_pretrained(base_model_path, subfolder="vae", torch_dtype=dtype)
+                vae = AutoencoderKL.from_pretrained(
+                    base_model_path,
+                    subfolder="vae",
+                    torch_dtype=dtype,
+                    local_files_only=local_files_only,
+                )
             flush()
             
             self.print_and_status_update("Loading T5")
-            tokenizer_2 = T5TokenizerFast.from_pretrained(base_model_path, subfolder="tokenizer_2", torch_dtype=dtype)
-            text_encoder_2 = T5EncoderModel.from_pretrained(base_model_path, subfolder="text_encoder_2",
-                                                            torch_dtype=dtype)
+            tokenizer_2 = T5TokenizerFast.from_pretrained(
+                base_model_path,
+                subfolder="tokenizer_2",
+                torch_dtype=dtype,
+                local_files_only=local_files_only,
+            )
+            text_encoder_2 = T5EncoderModel.from_pretrained(
+                base_model_path,
+                subfolder="text_encoder_2",
+                torch_dtype=dtype,
+                local_files_only=local_files_only,
+            )
 
             text_encoder_2.to(self.device_torch, dtype=dtype)
             flush()
@@ -808,8 +834,18 @@ class StableDiffusion:
                 flush()
                 
             self.print_and_status_update("Loading CLIP")
-            text_encoder = CLIPTextModel.from_pretrained(base_model_path, subfolder="text_encoder", torch_dtype=dtype)
-            tokenizer = CLIPTokenizer.from_pretrained(base_model_path, subfolder="tokenizer", torch_dtype=dtype)
+            text_encoder = CLIPTextModel.from_pretrained(
+                base_model_path,
+                subfolder="text_encoder",
+                torch_dtype=dtype,
+                local_files_only=local_files_only,
+            )
+            tokenizer = CLIPTokenizer.from_pretrained(
+                base_model_path,
+                subfolder="tokenizer",
+                torch_dtype=dtype,
+                local_files_only=local_files_only,
+            )
             text_encoder.to(self.device_torch, dtype=dtype)
 
             self.print_and_status_update("Making pipe")

@@ -131,6 +131,11 @@ npm run build_and_start
 
 You can now access the UI at `http://localhost:8675` or `http://<your-ip>:8675` if you are running it on a server.
 
+To load previously cached Flux models without contacting the Hugging Face API, set
+`AI_TOOLKIT_HF_LOCAL_FILES_ONLY=true`. Accepted true values are `1`, `true`, `yes`, and `on`
+(case-insensitive). When enabled, all required Flux model files must already be present in the
+Hugging Face cache; missing files will cause model loading to fail instead of being downloaded.
+
 ## Securing the UI
 
 If you are hosting the UI on a cloud provider or any network that is not secure, I highly recommend securing it with an auth token. 
